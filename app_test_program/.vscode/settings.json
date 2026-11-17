@@ -1,0 +1,41 @@
+{
+    // ========== 1. 集成终端使用 Nushell ==========
+    "terminal.integrated.defaultProfile.linux": "nushell",
+    "terminal.integrated.profiles.linux": {
+        "nushell": {
+            "path": "nu"
+        }
+    },
+
+    // ========== 2. 为所有集成终端注入环境变量 ==========
+    "terminal.integrated.env.linux": {
+        "ARMINO_PATH": "/home/dggdoo/project/armino/bk_avdk_smp",
+        "COMPILER_TOOLCHAIN_PATH": "/opt/gcc-arm-none-eabi-10.3-2021.10/bin",
+        "ARMINO_TOOLS_INSTALL_PATH": "/opt"
+    },
+
+    // ========== 3. CMake Tools 扩展的环境变量 ==========
+    "cmake.environment": {
+        "ARMINO_PATH": "/home/dggdoo/project/armino/bk_avdk_smp",
+        "COMPILER_TOOLCHAIN_PATH": "/opt/gcc-arm-none-eabi-10.3-2021.10/bin"
+    },
+    "cmake.configureEnvironment": {
+        "ARMINO_PATH": "/home/dggdoo/project/armino/bk_avdk_smp",
+        "COMPILER_TOOLCHAIN_PATH": "/opt/gcc-arm-none-eabi-10.3-2021.10/bin"
+    },
+
+    // ========== 4. IntelliSense 指向 compile_commands.json ==========
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/bk7258/app/bk7258/compile_commands.json",
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.cStandard": "c11",
+
+    // ========== 5. 文件关联与排除 ==========
+    "files.associations": {
+        "*.mk": "makefile",
+        "*.cmake": "cmake"
+    },
+    "search.exclude": {
+        "build/**": true,
+        "**/gcc-arm-none-eabi-*": true
+    }
+}

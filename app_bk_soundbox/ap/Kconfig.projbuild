@@ -1,0 +1,46 @@
+menu "app_bk_pi tri-mode speaker"
+
+    config APP_BK_PI_LVGL_PSRAM
+        bool "Put LVGL heap in PSRAM"
+        default y
+        help
+            Use a 256KB TLSF pool allocated from PSRAM for LVGL objects and
+            render buffers. This keeps the small AP SRAM heap free for BT ACL
+            packets and audio.
+
+    config A2DP_SINK_DEMO
+        bool "a2dp sink demo"
+        depends on BT
+        default y
+        help
+            Compile the A2DP sink path in SDK AT/BLE helpers. The actual
+            implementation lives in ap/app/bt/a2dp_sink_demo.c.
+
+    config APP_BK_PI_USE_AUDIO_PLAYER
+        bool "Use SDK bk_audio_player for SD playback"
+        default y
+        select AUDIO_PLAYER
+        help
+            Bring in the SDK audio player (playlist / decode / seek state machine)
+            for local files. The SD source and PCM sink are provided by the
+            application, so the ADK onboard-speaker stack is not required.
+
+    config APP_BK_PI_AUDIO_PLAYER_MINIMAL
+        bool "Only build WAV/MP3/FLAC decoders for bk_audio_player"
+        depends on APP_BK_PI_USE_AUDIO_PLAYER
+        default y
+        help
+            Trim the SDK player plugin list to the three formats this product
+            supports. Keeps AP FLASH usage under control.
+
+    config APP_BK_PI_GSENSOR
+        bool "Register SC7A20 via SDK g_sensor framework"
+        default y
+        select GSENSOR_ENABLE
+        help
+            Build ap/components/bk_gsensor/bk_gsensor.c and provide the
+            gs_sc7a20 device from ap/app/gsensor_sc7a20_glue.c (I2C1 P42/P43,
+            40Hz sampling). Do NOT also enable GSENSOR_SC7A20_ENABLE: the SDK
+            driver hardcodes I2C0 and needs an INT pin.
+
+endmenu
