@@ -74,7 +74,7 @@ make bk7258
 build/bk7258/<工程名>/package/all-app.bin
 ```
 
-用 **BK 官方烧录工具或者 lckfb 的在线烧录工具（https://wiki.lckfb.com/storage/html/bk7258-web-flasher/#/download）**烧 `all-app.bin`（也可直接烧仓库里的预编译 bin）。
+用 **BK 官方烧录工具或者 lckfb 的在线烧录工具（ https://wiki.lckfb.com/storage/html/bk7258-web-flasher/#/download ） **烧 `all-app.bin`（也可直接烧仓库里的预编译 bin）。
 
 连 **UART1（P0/P1，115200 8N1）**，上电看到 `cherrysh ready ...` 后输入 `help`。
 
