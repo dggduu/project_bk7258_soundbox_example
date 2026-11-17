@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="640" viewBox="0 0 1000 640" font-family="Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="640" fill="#f8fafc"/>
+
+  <!-- 输入源 -->
+  <rect x="50" y="50" width="240" height="80" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="170" y="88" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">手机 / 平板</text>
+  <text x="170" y="108" text-anchor="middle" font-size="12" fill="#1e40af">蓝牙 A2DP · AVRCP</text>
+
+  <rect x="380" y="50" width="240" height="80" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="500" y="88" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">电脑 / 手机</text>
+  <text x="500" y="108" text-anchor="middle" font-size="12" fill="#1e40af">USB UAC1 · 48k/16bit</text>
+
+  <rect x="710" y="50" width="240" height="80" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="830" y="88" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">SD 卡</text>
+  <text x="830" y="108" text-anchor="middle" font-size="12" fill="#1e40af">FATFS · WAV/MP3/FLAC</text>
+
+  <!-- 主控 -->
+  <rect x="280" y="230" width="440" height="170" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.8"/>
+  <text x="500" y="278" text-anchor="middle" font-size="22" font-weight="700" fill="#4c1d95">BK7258</text>
+  <text x="500" y="308" text-anchor="middle" font-size="13" fill="#5b21b6">三模音频路由 · LVGL v8 UI</text>
+  <text x="500" y="330" text-anchor="middle" font-size="13" fill="#5b21b6">A2DP Sink + AVRCP · UAC1 · FATFS</text>
+  <text x="500" y="352" text-anchor="middle" font-size="13" fill="#5b21b6">SBC / MP3 / FLAC / WAV 解码</text>
+
+  <!-- 输入设备 -->
+  <rect x="40" y="250" width="200" height="130" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="1.6"/>
+  <text x="140" y="278" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">输入</text>
+  <text x="140" y="302" text-anchor="middle" font-size="12" fill="#92400e">ADC 四键 P28</text>
+  <text x="140" y="322" text-anchor="middle" font-size="12" fill="#92400e">电池 P22 / ADC5</text>
+  <text x="140" y="342" text-anchor="middle" font-size="12" fill="#92400e">SC7A20 摇一摇</text>
+
+  <!-- 音频输出 -->
+  <rect x="50" y="500" width="180" height="90" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="140" y="538" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">内部 DAC</text>
+  <text x="140" y="558" text-anchor="middle" font-size="11" fill="#166534">数字增益 0~0x3F</text>
+
+  <rect x="270" y="500" width="180" height="90" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="360" y="538" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">NS4150B 功放</text>
+  <text x="360" y="558" text-anchor="middle" font-size="11" fill="#166534">PA_EN P52</text>
+
+  <rect x="490" y="500" width="180" height="90" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="580" y="538" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">喇叭</text>
+  <text x="580" y="558" text-anchor="middle" font-size="11" fill="#166534">差分输出</text>
+
+  <!-- 屏幕 -->
+  <rect x="720" y="500" width="230" height="90" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="835" y="538" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">ST77916 屏</text>
+  <text x="835" y="558" text-anchor="middle" font-size="11" fill="#166534">360×360 · QSPI 4 线</text>
+
+  <!-- 连线 -->
+  <g fill="none" stroke="#64748b" stroke-width="1.6">
+    <path d="M170,130 L170,180 L350,180 L350,230" marker-end="url(#arrow)"/>
+    <path d="M500,130 L500,230" marker-end="url(#arrow)"/>
+    <path d="M830,130 L830,180 L650,180 L650,230" marker-end="url(#arrow)"/>
+    <path d="M240,315 L280,315" marker-end="url(#arrow)"/>
+    <path d="M330,400 L330,450 L140,450 L140,500" marker-end="url(#arrow)"/>
+    <path d="M230,545 L270,545" marker-end="url(#arrow)"/>
+    <path d="M450,545 L490,545" marker-end="url(#arrow)"/>
+    <path d="M650,400 L650,450 L835,450 L835,500" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- 连线标签 -->
+  <g font-size="11" fill="#64748b" style="paint-order:stroke;stroke:#f8fafc;stroke-width:4px">
+    <text x="182" y="174">蓝牙</text>
+    <text x="510" y="188">USB</text>
+    <text x="702" y="174">SDIO</text>
+    <text x="252" y="309">按键</text>
+    <text x="150" y="442">音频</text>
+    <text x="700" y="442">QSPI</text>
+  </g>
+</svg>
