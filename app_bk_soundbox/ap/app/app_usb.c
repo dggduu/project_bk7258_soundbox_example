@@ -55,8 +55,10 @@ extern bk_err_t bk_usb_open(uint32_t usb_mode);
  *   0x0102  UAC2 音量范围/单位修正
  *   0x0103  UAC2 **bmaControls 改为双位编码 0x0F**（Mute+Volume 均读写）
  *   0x0104  只保留 master 音量（声道位 0x00）+ 量程放到 -127dB
+ *   0x0105  UAC2 麦克风 Feature Unit 补上声道控制组（Windows 枚举修复）
+ *   0x0106  UAC2 麦克风改立体声（2ch，FU 3 组，192B/ms）
  */
-#define UAC_BCD_DEVICE 0x0104
+#define UAC_BCD_DEVICE 0x0106
 #define UAC_LANGID 0x0409
 #define UAC_EP_OUT 0x01
 #define UAC_EP_IN 0x82
@@ -69,7 +71,7 @@ extern bk_err_t bk_usb_open(uint32_t usb_mode);
 #define UAC_MIC_INTF 2
 
 /* 播放方向（立体声）每 1ms 的字节数：48k × 2ch × 2B = 192。
- * 录音方向的包长在 UAC_MIC_CHANNELS 定义处算（那边是单声道，值不同）。 */
+ * 录音方向同样按 2ch 算（见 UAC_MIC_PACKET），也是 192B/ms。 */
 #define UAC_OUT_PACKET (UAC_RATE / 1000 * UAC_CHANNELS * 2)      /* 192 */
 #define UAC_OUT_MPS UAC_OUT_PACKET
 
@@ -138,25 +140,17 @@ extern bk_err_t bk_usb_open(uint32_t usb_mode);
 /* ============================== UAC2 ============================== */
 /* AC 头的 wTotalLength：AC 头 + 两个方向的 Clock/IT/FU/OT（不含 AC 接口描述符本身）
  *
- * 【录音方向那个 0 不能写成 1 —— 这里曾经多算 4 字节】
- * `AUDIO_V2_SIZEOF_AC_FEATURE_UNIT_DESC(ch)` = 6 + (ch+1)*4，其中 ch 是
- * **声道数**，而 FU 描述符里实际写几组 bmaControls 由调用处传了几个
- * `DBVAL(...)` 决定。两者必须严格一致：
+ * `AUDIO_V2_SIZEOF_AC_FEATURE_UNIT_DESC(ch)` = 6 + (ch+1)*4，ch 是**声道数**，
+ * 必须和 FU 实际写的 bmaControls 组数一致（组数 = ch + 1）：
  *
- *   播放 FU：`DBVAL(0x03), DBVAL(0x02), DBVAL(0x02)` -> 3 组 -> ch 传 2 ✓
- *   录音 FU：`DBVAL(0x03)`                             -> 1 组 -> ch 传 **0**
+ *   播放 FU：DBVAL(0x0F), DBVAL(0x00), DBVAL(0x00) -> 3 组 -> ch 传 2
+ *   录音 FU：DBVAL(0x0F), DBVAL(0x00), DBVAL(0x00) -> 3 组 -> ch 传 2
  *
- * 原来录音这里传的是 1，算出 6+2*4=14，但实际只发了 10 字节
- * （6+1*4）—— AC 头于是报 115 而真实只有 111，**多出 4 字节**。
- * 后果是连锁的：
- *   1. Linux 按 115 遍历 AC 类描述符，会多读 4 字节，把紧跟其后的
- *      AS Interface 描述符头当成 AC 数据，从而漏掉整个 AS 接口
- *   2. `UAC_CONFIG_LEN` 同步多 4 字节，设备 GET_DESCRIPTOR 时越界
- *      多发了 4 字节垃圾 —— `lsusb -v` 末尾那句
- *      `** UNRECOGNIZED: 04 03 09 04` 就是它，不是对齐填充
- *
- * 实测（21:55 的 lsusb 输出）逐段数：9+8+17+18+12 +8+17+**10**+12 = 111，
- * 与 115 差 4，即为此 bug 的物证。 */
+ * 麦克风 FU 也必须给满 bNrChannels + 1 组 bmaControls（立体声 3 组）：
+ * 只写 master 一组（bLength=10）等于声明 bNrChannels=0，与 Input Terminal
+ * 的声道数对不上。Linux 的 snd-usb-audio 能容错，但 Windows 的
+ * usbaudio2.sys 会解析失败 —— 设备管理器里就是 "该设备无法启动 (Code 10)"。
+ * 当前立体声逐段：9+8+17+18+12 +8+17+**18**+12 = 119。 */
 #define UAC_AC_SIZ (AUDIO_V2_SIZEOF_AC_HEADER_DESC +                    \
                     AUDIO_V2_SIZEOF_AC_CLOCK_SOURCE_DESC +              \
                     AUDIO_V2_SIZEOF_AC_INPUT_TERMINAL_DESC +            \
@@ -164,7 +158,7 @@ extern bk_err_t bk_usb_open(uint32_t usb_mode);
                     AUDIO_V2_SIZEOF_AC_OUTPUT_TERMINAL_DESC +           \
                     AUDIO_V2_SIZEOF_AC_CLOCK_SOURCE_DESC +              \
                     AUDIO_V2_SIZEOF_AC_INPUT_TERMINAL_DESC +            \
-                    AUDIO_V2_SIZEOF_AC_FEATURE_UNIT_DESC(0) +           \
+                    AUDIO_V2_SIZEOF_AC_FEATURE_UNIT_DESC(2) +           \
                     AUDIO_V2_SIZEOF_AC_OUTPUT_TERMINAL_DESC)
 
 /* 配置总长：9(config) + 26(IAD + AC 接口 + **AC 头**) + AC 内其余类描述符 + 两个 AS。
@@ -176,27 +170,21 @@ extern bk_err_t bk_usb_open(uint32_t usb_mode);
                         AUDIO_V2_AS_DESCRIPTOR_INIT_LEN +                \
                         AUDIO_V2_AS_DESCRIPTOR_INIT_LEN)
 
-/* 麦克风按单声道上报（2 个物理麦取左）：
- * DMIC 是双麦，但"USB 麦克风"给主机一路就够，两路会让录音软件
- * 出现重复/相位接近的双声道。要立体声就把 UAC_MIC_CHANNELS 改 2，
- * 并把 bsp_mic_init() 的 stereo 保持 true。 */
-#define UAC_MIC_CHANNELS 1
-#define UAC_MIC_BMCHCFG 0x00000004   /* AUDIO_CHANNEL_FC：单声道居中 */
+/* 麦克风按**立体声**上报（双 DMIC 左/右各一路，原样送主机）：
+ * DMIC 组件本身是 stereo（bsp_mic_init 的 stereo=true），USB 侧直接
+ * 收两路，不再做左声道抽取 —— 录音软件能拿到真正的双麦立体声。
+ * 要回单声道就把这里改 1，并注意 UAC_AC_SIZ 里 FU 的声道数、
+ * 以及 mic 任务里的兜底分支。 */
+#define UAC_MIC_CHANNELS 2
+#define UAC_MIC_BMCHCFG 0x00000003   /* AUDIO_CHANNEL_FL | FR：左右声道 */
 
 /* 录音方向每 1ms 的字节数 —— **必须与上面这个声道数一致**。
- *
- * 【历史 bug】这里原来写死 192（那是"48k × 2ch × 2B"的立体声量），
- * 但接口声明的是单声道，48k 单声道每毫秒只有 96 字节。按 192 发，
- * 等于每包塞了 2ms 的数据却按 1ms 上报，主机侧算出来的采样数是对的两倍。
- * 症状：`arecord -l` 能看到卡、OBS 也能选到设备，但采出来全是噪声
- * 或者干脆没有数据 —— 排查时特别容易误判成"描述符还是不对"。
- *
- * 现在由声道数推导，改 UAC_MIC_CHANNELS 时不会再一次对不上。 */
-#define UAC_MIC_PACKET (UAC_RATE / 1000 * UAC_MIC_CHANNELS * 2)  /* 96 */
+ * 48k × 2ch × 2B = 192B/ms。改 UAC_MIC_CHANNELS 时自动跟着变。 */
+#define UAC_MIC_PACKET (UAC_RATE / 1000 * UAC_MIC_CHANNELS * 2)  /* 192 */
 
 /* IN 侧 MPS 留 4 字节余量：主机（尤其 Linux/Android）允许异步 IN 端点
  * 每帧比标称多几个字节做漂移补偿；包长写死等于标称值会让主机偶尔拒收。 */
-#define UAC_IN_MPS (UAC_MIC_PACKET + 4)                          /* 100 */
+#define UAC_IN_MPS (UAC_MIC_PACKET + 4)                          /* 196 */
 
 static const uint8_t s_uac_descriptor[] = {
     /* 与官方 audio_v2_mic_speaker 例程一致：设备类 0x00，功能分组靠配置里的 IAD
@@ -208,11 +196,16 @@ static const uint8_t s_uac_descriptor[] = {
     USB_CONFIG_DESCRIPTOR_INIT(UAC_CONFIG_LEN, 3, 1, USB_CONFIG_BUS_POWERED,
                                250),
 
-    /* bCategory 用 HEADSET：同一功能里既有 Speaker 又有 Microphone，
-     * 报 SPEAKER 会让部分主机的录音控制面板把它当纯输出设备。
+    /* bCategory 用 UNDEF（与官方 audio_v2_mic_speaker 例程一致）。
+     *
+     * SDK 头里的 AUDIO_CATEGORY_HEADSET 实际是 0x04，而 UAC2 规范里
+     * 0x04 = Microphone（0x03 才是 Headset）—— 按 HEADSET 写会让 Windows
+     * 把整个功能当"麦克风"，对双向设备不友好。
+     * bCategory 只是给主机做分类提示，UNDEF 不会丢功能：
+     * 主机仍按 AC 里的 IT/OT + AS 接口枚举出播放和录音两路。
      * bInterfaceCount = 3 把三个接口归到同一个功能里（must 与 bNumInterfaces 一致）。 */
     AUDIO_V2_AC_DESCRIPTOR_INIT(UAC_AC_INTF, 3, UAC_AC_SIZ,
-                                AUDIO_CATEGORY_HEADSET, 0x00, 0),
+                                AUDIO_CATEGORY_UNDEF, 0x00, 0),
 
     /* ---- 播放方向：Clock -> USB IT -> FU -> Speaker OT ---- */
     AUDIO_V2_AC_CLOCK_SOURCE_DESCRIPTOR_INIT(UAC_CLOCK_ID, 0x03, 0x03),
@@ -260,11 +253,17 @@ static const uint8_t s_uac_descriptor[] = {
     AUDIO_V2_AC_INPUT_TERMINAL_DESCRIPTOR_INIT(UAC_MIC_IT_ID, AUDIO_INTERM_MIC,
                                                UAC_MIC_CLOCK_ID, UAC_MIC_CHANNELS,
                                                UAC_MIC_BMCHCFG, 0x0000),
-    /* master 只给 Mute（录音侧不需要音量控制），单声道只需要 master 一项 */
-    /* 录音方向：单声道，只有 master 一组。同样必须用 0x0F（每控制 2 bit），
-     * 写 0x03 会让主机认为这里"只支持 Mute"，录音增益控制建不出来。 */
+    /* 【必须给 bNrChannels+1 组 bmaControls】
+     *
+     * 立体声麦克风的 Feature Unit 是 master(0) + 左 + 右 三组，
+     * 不能只写 master。之前只写一组（bLength=10），等于声明 bNrChannels=0，
+     * 与 Input Terminal 的 2 声道对不上 —— Linux 的 snd-usb-audio 能容错，
+     * 但 Windows 的 usbaudio2.sys 会解析失败，设备管理器里报
+     * "该设备无法启动 (Code 10)"。官方 audio_v2_mic 例程也是给满
+     * (bNrChannels+1) 组。
+     * 声道 1/2 给 0x00（无独立控制），只有 master 有 Mute+Volume。 */
     AUDIO_V2_AC_FEATURE_UNIT_DESCRIPTOR_INIT(UAC_MIC_FU_ID, UAC_MIC_IT_ID,
-                                             DBVAL(0x0F)),
+                                             DBVAL(0x0F), DBVAL(0x00), DBVAL(0x00)),
     AUDIO_V2_AC_OUTPUT_TERMINAL_DESCRIPTOR_INIT(UAC_MIC_OT_ID, AUDIO_TERMINAL_STREAMING,
                                                 UAC_MIC_FU_ID, UAC_MIC_CLOCK_ID, 0x0000),
 
@@ -364,7 +363,7 @@ static volatile uint32_t s_rd;
  * 采集与发送在两个完全不同的时间尺度上跑：DMIC 20ms 一块，USB 1ms 一包。
  * 环形缓冲负责把两者解耦，深度就是容忍调度抖动的额度（这里 42ms）。
  * 缓冲做成 2 的幂，取模用掩码。 */
-#define UAC_MIC_RING_SIZE 8192   /* 约 85ms @48k/16bit/mono（96B/ms），吸收调度抖动 */
+#define UAC_MIC_RING_SIZE 16384  /* 约 85ms @48k/16bit/stereo（192B/ms），吸收调度抖动 */
 static uint8_t s_mic_ring[UAC_MIC_RING_SIZE] __attribute__((aligned(4)));
 static volatile uint32_t s_mic_wr;
 static volatile uint32_t s_mic_rd;
@@ -612,9 +611,9 @@ static void uac_mic_ring_pop(uint8_t *out, uint32_t len) {
   s_mic_rd = rd + n;
 }
 
-/* 采样率转换占位：当前只支持 48k 单声道对齐，不做重采样。
- * DMIC 一帧 20ms 采 960 点（48k），USB 每 ms 只要 48 点（单声道 16bit=96B），
- * 96*20 = 1920 = 960*2，正好整除，不需要 SRC。 */
+/* 采样率转换占位：当前只支持 48k 立体声对齐，不做重采样。
+ * DMIC 一帧 20ms 采 960 点/声道（48k），USB 每 ms 要 48 点/声道
+ * （立体声 16bit = 192B），192*20 = 3840 = 960*2*2，正好整除，不需要 SRC。 */
 
 /* 采集任务：只做"DMIC 一帧 -> 环形缓冲"这一件事。
  *
@@ -624,17 +623,16 @@ static void uac_mic_ring_pop(uint8_t *out, uint32_t len) {
  *
  * 缓冲放静态区：20ms@48k 双声道 int16 是 3.8KB，塞进 4KB 任务栈太冒险。
  *
- * 【曾经的 bug】这里原来声明成 int32_t s_mic_frame[2*960]，然后写
- *   s_mic_mono[i] = (int16_t)(s_mic_frame[i*2] & 0xFFFF);
+ * 【曾经的 bug】这里原来把 int32_t 当采样点索引（`int32_t s_mic_frame[2*960]`），
  * 但 bsp_mic（onboard_dual_dmic_mic_stream）输出的是 **int16 交织**：
  *   c.adc_cfg.bits = 16、c.dmic_data_shift = 0、stereo 时 dual_dmic_sgl_out = 0
- * 所以内存布局是 L0 R0 L1 R1 …（每点 2 字节）。按 int32 索引等于每次跨
- * 4 个 int16 = 2 个立体声帧，取到的不是"左声道第 i 点"而是"第 2i 帧的左
- * 声道"，外加高 16 位混进了右声道 —— 结果既是错误抽头（等效降采样 2 倍+
- * 混叠），幅值也完全不对。主机侧表现就是"有数据流但听不出人声/全是噪声"。
- * 现在按 uint8 缓冲 + int16 视图，索引严格对应交织布局。 */
+ * 内存布局是 L0 R0 L1 R1 …（每点 2 字节）。按 int32 索引等于每次跨 2 个
+ * 立体声帧，取到的不是"第 i 点"而是"第 2i 帧"，高 16 位还混进了下一个
+ * 声道 —— 结果既降采样又混叠，主机侧表现就是"有数据流但听不出人声/全是噪声"。
+ * 现在按 uint8 缓冲 + int16 视图，立体声原样送给主机。 */
 static uint8_t s_mic_frame_raw[20 * 48000 / 1000 * 2 * 2] __attribute__((aligned(4)));
-static int16_t s_mic_mono[960];
+/* 单麦兜底时才用：把一路复制成双声道（USB 描述符固定 2ch） */
+static int16_t s_mic_stereo[960 * 2];
 
 static void uac_mic_task(void *arg) {
   (void)arg;
@@ -698,25 +696,27 @@ static void uac_mic_task(void *arg) {
     ch = bsp_mic_channels();
     if (ch == 0)
       ch = 1;
-    if (got > (sizeof(s_mic_mono) / sizeof(s_mic_mono[0])))
-      got = sizeof(s_mic_mono) / sizeof(s_mic_mono[0]);
 
     if (ch >= 2) {
-      /* 双声道交织 -> 单声道：**只取左声道**（按用户要求，不做两麦平均）。
-       *
-       * 曾试过 (L+R)/2：两颗麦在腔体里位置不同，同一声源到两麦有相位差，
-       * 相加会在中高频形成梳状滤波，听感发空；而且一旦两颗麦极性相反就会
-       * 互相抵消。取单路没有这些风险，信号最干净。
-       *
-       * 步长 = 声道数：DMIC 输出是 L0 R0 L1 R1 …（每个点 int16），
-       * 所以第 i 个左声道点在 frame[i*ch]。 */
-      for (i = 0; i < got; i++)
-        s_mic_mono[i] = frame[i * ch];
-    } else {
-      memcpy(s_mic_mono, frame, got * sizeof(int16_t));
-    }
+      /* 双 DMIC 原样立体声输出：L0 R0 L1 R1 …（int16 交织）。
+       * 不做左声道抽取 —— 主机侧要的就是两路麦克风的立体声。 */
+      uint32_t bytes = got * 2 * sizeof(int16_t);
 
-    uac_mic_ring_push((const uint8_t *)s_mic_mono, got * 2);
+      if (bytes > sizeof(s_mic_frame_raw))
+        bytes = sizeof(s_mic_frame_raw);
+      uac_mic_ring_push(s_mic_frame_raw, bytes);
+    } else {
+      /* 单麦兜底：复制成双声道（USB 描述符固定 2ch） */
+      uint32_t max = (sizeof(s_mic_stereo) / sizeof(s_mic_stereo[0])) / 2;
+
+      if (got > max)
+        got = max;
+      for (i = 0; i < got; i++) {
+        s_mic_stereo[i * 2] = frame[i];
+        s_mic_stereo[i * 2 + 1] = frame[i];
+      }
+      uac_mic_ring_push((const uint8_t *)s_mic_stereo, got * 2 * sizeof(int16_t));
+    }
   }
 
   s_mic_task = NULL;
@@ -777,7 +777,7 @@ static struct usbd_endpoint s_ep_out = {
  * 回调里马上把下一包塞进去，端点就永远不会空 —— 这是 USB 设备端音频的
  * 常规做法（主机那边是异步 IN，设备侧保持"永远有数据可发"即可）。
  *
- * 中断里做的事：从 8KB 环形缓冲搬 192B 到一块空闲包缓冲，再登记一次。
+ * 中断里做的事：从 16KB 环形缓冲搬 192B 到一块空闲包缓冲，再登记一次。
  * 192B 字节拷贝在 240MHz 上不到 2us，对 USB 中断完全可接受；换来的是
  * 不用起高优先级定时任务、不额外占栈、也不受 FreeRTOS 调度抖动影响。
  */
@@ -834,7 +834,7 @@ static void uac_mic_submit_next(void) {
  *
  * 注意这不是"包发完了"那么细，而是 usbd_ep_start_write() 登记的那一整段
  * 都进过 FIFO 了 —— Beken 端口在中断里按 MPS 分片，只有最后一片发完才
- * 回调（usb_dc_beken_musb_fdrc.c:726）。所以每包 UAC_MIC_PACKET(96)B
+ * 回调（usb_dc_beken_musb_fdrc.c:726）。所以每包 UAC_MIC_PACKET(192)B
  * 只回调一次，nbytes 恒等于 UAC_MIC_PACKET。 */
 static void uac_in_ep_callback(uint8_t ep, uint32_t nbytes) {
   int8_t idx = s_mic_inflight;
